@@ -38,7 +38,7 @@ be changed when it is needed.
 
 这是一个你可以实时贡献的指南, 在这个 https://github.com/vert-x3/advanced-vertx-guide[仓库] 提交PR或者issue吧 
 
-WARNING: 本指南中介绍了一些Vert.x的内部API，您应该记住:这些API仅仅在确实需要时进行更改。
+WARNING: 谨记：本指南中介绍的一些Vert.x的内部API，这些API如必要会做相应变更。
 
 include::Vertx_contexts.adoc[]
 
