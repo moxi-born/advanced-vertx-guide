@@ -6,28 +6,6 @@ Julien Viet <julien@julienviet.com>
 
 本文旨在解释和讨论以下内容
 
-
-- Vert.x design
-- Internal APIs
-- Integration with Netty
-
-You want to read this guide when you want to
-
-- understand better Vert.x internals
-- integrate Vert.x with thirdparty libraries
-- perform networking with Netty and Vert.x
-
-This is a live guide and you can contribute, just open a PR or an issue in the https://github.com/vert-x3/advanced-vertx-guide[repo].
-
-WARNING: Some of the internal Vert.x APIs are exposed in this guide and you should keep in mind that these APIs are subject to
-be changed when it is needed.
-
-
-
-本指南文档介绍了Vert.x的高级/底层内容
-
-本文旨在解释和讨论以下内容
-
 - Vert.x的设计
 - 内部API
 - 与Netty集成
