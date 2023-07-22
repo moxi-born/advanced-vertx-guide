@@ -1,9 +1,11 @@
-= Advanced Vert.x Guide
+= Vert.x高阶指南
+
 Julien Viet <julien@julienviet.com>
 
-This guide document advanced/internal stuff about Vert.x.
+本指南文档介绍了Vert.x的高级/底层内容
 
-It aims to explain and discuss the following
+本文旨在解释和讨论以下内容
+
 
 - Vert.x design
 - Internal APIs
@@ -26,17 +28,17 @@ be changed when it is needed.
 
 本文旨在解释和讨论以下内容
 
-- Vert.x 设计
+- Vert.x的设计
 - 内部API
 - 与Netty集成
 
-当你阅读本指南时你将:
+当你阅读本指南时你将：
 
-- 更好地了解Vert.x底层
-- Vert.x与第三方库的集成
-- 使用Netty和Vert.x编写网络应用
+- 更深入了解Vert.x
+- 了解如何将Vert.x与其他第三方库集成
+- 了解如何使用Netty和Vertx.x编写网络应用
 
-这是一个你可以实时贡献的指南, 在这个 https://github.com/vert-x3/advanced-vertx-guide[仓库] 提交PR或者issue吧 
+这是一个实时指南，你可以做出贡献，只需在这个https://github.com/vert-x3/advanced-vertx-guide[仓库] 提交PR或者issue
 
 WARNING: 谨记：本指南中介绍的一些Vert.x的内部API，这些API如必要会做相应变更。
 

@@ -1,17 +1,14 @@
-== Contexts in Vert.x (Vert.x中的Contexts)
+== Vert.x中的上下文
 
-`io.vertx.core.Context` 接口是Vert.x的一个重要组件.
+`io.vertx.core.Context` 接口是Vert.x的一个重要组件。
 
-往高处说，context(上下文)可以被认为是起着控制应用程序如何执行事件(或由handler创建的任务)的作用.
+上下文(Context)可以被认为是应用程序如何执行事件（或者handler创建的任务）。
 
-大多数事件是通过上下文分派的，当应用程序使用事件时，很可能有一个关联的上下文事件的发送。
+绝大部分的事件是通过上下文（Context）下发的， 当应用程序消费事件时，往往存在与事件调度相关联的上下文。
 
-=== Verticle contexts(Verticel的上下文)
+=== Verticle上下文
 
-When an instance of a verticle is deployed, Vert.x creates and associates a context with this instance. You can access
-this context in your verticle using the `context` field of `AbstractVerticle`:
-
-部署 Verticle 实例时，Vert.x会创建一个上下文并将其与该实例相关联。您可以通过使用 `AbstractVerticle` 的 `context` 字段在你的verticle中访问这个上下文。
+部署verticle的实例时，Vert.x会创建一个上下文并将其与该实例关联。你可以通过 `AbstractVerticle` 的 `context` 字段在verticle中访问此上下文
 
 
 [source,java]
@@ -23,34 +20,20 @@ public class MyVerticle extends AbstractVerticle {
 }
 ----
 
-When `MyVerticle` is deployed, Vert.x emits a _start_ event, the `start` method is called by a thread of the Verticle context:
+当 `MyVerticle` 部署后，Vert.x 会发送一个 _start_ 事件, Verticle上下文调用`start` 方法:
 
-- by default the context is always an event-loop context, the caller thread is an event-loop
-- when the verticle is deployed as a worker the caller thread is one of the worker pool of Vert.x
+- 默认情况下，上下文始终是事件循环（event-loop）上下文，调用线程是事件循环 （event loop）
 
-当 `MyVerticle` 部署时，Vert.x 会发出一个 _start_ 事件，该 start 方法由 Verticle 上下文的线程调用:
-
-- 默认情况下，context是一个事件循环上下文，调用线程是一个事件循环
-- 当 Verticle 被部署为worker时，调用者是 Vert.x的worker线程池中的一个线程
+- 当vertile部署为worker时，调用线程是Vert.x的worker池之一
 
 
-=== Ad hoc contexts(临时上下文)
+=== 上下文（Context）的特殊之处
 
-Using Vert.x APIs without using Verticle is supported since Vert.x 3 and leads to the interesting question of
-which context is used.
+从 Vert.x 3开始支持不通过Verticle使用Vert.x的API，这引出了一个有意思的问题：到底使用哪个上下文（Context）？
 
-从Vert.x 3 后支持在不使用 Verticle 的情况下使用 Vert.x API，这会导致一个有趣的问题-到底使用哪个上下文
+当一个Vert.x的API被调用，Vert.x关联当前线程到一个特殊的event-loop context，`Vertx#getOrCreateContext()` 在第一次被非Vertx线程调用时创建上下文，然后在随后的调用中返回此上下文。
 
-When a Vert.x API is called, Vert.x associates the current thread with an ad hoc event-loop context,
-`Vertx#getOrCreateContext()` creates a context the first time it is called for a non vertx thread and then
-returns this context on subsequent calls.
-
-当调用 Vert.x API 时，Vert.x 将当前线程与一个临时事件循环上下文相关联，
-`Vertx#getOrCreateContext()` 在第一次为非vertx 线程调用它时创建一个上下文，然后在后续调用中返回此上下文。
-
-Consequently, callbacks on asynchronous Vert.x API happen on the same context:
-
-因此，异步 Vert.x API 的回调发生在相同的上下文中:
+ 因此，异步Vert.x API上的回调在同一上下文中发生：
 
 [source,java]
 ----
@@ -63,154 +46,130 @@ public class Main {
         .get(8080, "myserver.mycompany.com", "/some-uri")
         .send()
         .onSuccess(ar -> {
-         // All callbacks are on the same context
+         // 所有的回调在同一个上下文
         });
     }
   }
 }
 ----
 
-This behavior differs from previous major versions, Vert.x 3 would create a different context for each HTTP request.
-
-While Vert.x does encourage confining code in context, such behavior avoids potential data races.
-
-此行为与之前的主要版本不同，Vert.x 3 会为每个 HTTP 请求创建不同的上下文。
+与之前的主要版本不同，Vert.x 3 会为每个 HTTP 请求创建不同的上下文。
 虽然Vert.x建议限制在context中的代码操作，以上的行为避免了潜在的数据竞争。
 
-=== Propagation of contexts(上下文的传递)
+=== 上下文（context）的传递
 
-Most Vert.x APIs are aware of contexts.
+大多数Vert.x API都包含上下文的存在（原文aware of明白上下文的存在）。
 
-Asynchronous operations executed within a context will call back the application with the same context.
+在上下文中执行的异步操作将调用具有相同上下文的应用程序。
 
-Likewise, event handlers are also dispatched on the same context.
-
-大多数 Vert.x API 包含上下文的存在(可能这样翻译适合点？)。
-
-应用程序在上下文中执行的异步操作将回调相同的上下文。
-
-同样的，事件处理handler也在同一上下文中分派。
+同样，事件处理程序也在同一上下文上调度。
 
 [source,java]
 ----
 public class MyVerticle extends AbstractVerticle {
-  public void start() {
-    Future<HttpServer> future = vertx.createHttpServer()
-      .requestHandler(request -> {
-        // Executed in the verticle context
-      })
-      .listen(8080, "localhost");
+ public void start() {
+   Future<HttpServer> future = vertx.createHttpServer()
+     .requestHandler(request -> {
+       // 在verticle上下文中执行
+     })
+     .listen(8080, "localhost");
 
-    future.onComplete(ar -> {
-       // Executed in the verticle context
-    });
-  }
+   future.onComplete(ar -> {
+      // 在verticle上下文中执行
+   });
+ }
 }
 ----
 
-=== Dealing with contexts
+=== 处理上下文（Context）
 
-Most application don't need tight interactions with a context but sometimes it can be useful to access them, e.g
-your application uses another library that performs a callback on its own thread and you want to execute code
-in the original context.
+大多数应用程序不需要与上下文进行紧密的交互，但有时访问它们会很有用，例如，你的应用程序使用另一个库，该库在自己的线程上执行回调，并且你希望在原始上下文中执行代码。
 
-Above we have seen a verticle can access its context through the `context` field but that implies to use a verticle
-and to have a reference on the verticle which might not always be handy.
+上文我们看到，verticle可以通过 `context` 字段访问其上下文，但这意味着使用verticle并在verticle上有一个引用可能并不总是方便的。
 
-You can get the current context with `getOrCreateContext()`:
+你可以通过 `getOrCreateContext()` 获取当前上下文:
 
 [source,java]
 ----
 Context context = vertx.getOrCreateContext();
 ----
 
-You can also use the static method `Vertx.currentContext()`:
+你也可以使用静态方法 `Vertx.currentContext()`:
 
 [source,java]
 ----
 Context context = Vertx.currentContext();
 ----
 
-The later might return null if the current thread is not associated with a context, whereas the former will create
-one if needed and thus never returns null.
+如果当前线程没有与上下文关联，则后者可能返回null，而前者将在需要时创建一个上下文，因此永远不会返回null。
 
-After you obtained a context, you can use it to run code in this context:
+在获取了上下文之后，你可以在这个上下文中执行代码：
 
 [source,java]
 ----
 public void integrateWithExternalSystem(Handler<Event> handler) {
-  // Capture the current context
-  Context context = vertx.getOrCreateContext();
+ // 捕获当前上下文
+ Context context = vertx.getOrCreateContext();
 
-  // Run the event handler on the application context
-  externalSystem.onEvent(event -> {
-    context.runOnContext(v -> handler.handle(event));
-  });
+ // 在应用上下文上执行事件处理器
+ externalSystem.onEvent(event -> {
+   context.runOnContext(v -> handler.handle(event));
+ });
 }
 ----
 
-In practice, many Vert.x APIs and thirdparty libraries are implemented this way.
+在实践中，很多Vert.x的API和第三方库就是这样实现的。
 
-=== Event-loop context
+=== 事件循环上下文（Event-loop context）
 
-An event loop context uses an event loop to run code: handlers are executed directly on the IO threads, as
-a consequence:
+A 事件循环上下文使用事件循环（Event-loop）来运行代码：处理程序直接在IO线程上执行，因此：
 
-- A handler will always be executed with the same thread
-- A handler must never block the thread, otherwise it will create starvation for all the IO tasks associated
-with that event loop.
+-  处理程序将始终使用同一个线程执行
+-  处理程序决不能阻塞线程，否则它将会导致该事件循环关联的所有IO任务阻塞（原文是starvation）
 
-This behavior allows for a greatly simplified threading model by guaranteeing that associated handlers will
-always be executed on the same thread, thus removing the need for synchronization and other locking mechanisms.
+这种行为通过保证关联的处理程序总是在同一个线程上执行，从而消除了同步和其他锁机制的需要，从而大大简化了线程模型。
 
-This is the type of context that is the default and most commonly used type of context. A verticle deployed
-without the worker flag will always be deployed with an event loop context.
+事件循环上下文是默认和最常用的上下文类型，在没有worker标志的情况下部署的verticle将始终使用事件循环上下文进行部署。
 
-=== Worker context
+=== Worker上下文（Worker context）
 
-Worker contexts are assigned to verticles deployed with the worker option enabled. The worker context is
-differentiated from standard event loop contexts in that workers are executed on a separate worker thread pool.
+Worker上下文被分配给在启用worker选项的情况下部署的verticle上。Worker上下文与标准事件循环上下文的区别在于，工作线程在单独的工作线程池上执行。
 
-This separation from event loop threads allows worker contexts to execute the types of blocking operations that
-will block the event loop: blocking such thread will not impact the application other than blocking one thread.
+这种与事件循环线程的分离允许Worker上下文执行阻塞事件循环的阻塞操作类型：阻塞这样的线程除了阻塞一个线程之外不会影响应用程序。
 
-Just as is the case with the event loop context, worker contexts ensure that handlers are only executed on one
-thread at any given time. That is, handlers executed on a worker context will always be executed
-sequentially - one after the other - but different actions may be executed on different threads.
+正如事件循环上下文一样，Worker上下文确保处理程序在任何给定时间只在一个线程上执行，也就是说，Worker作上下文上执行的处理程序将始终按顺序执行，一个接一个，但不同的操作可能在不同的线程上执行。
 
-=== Context exception handler
+=== 上下文异常处理器
 
-An exception handler can be set on a context, to catch any unchecked exception thrown by task running on a context.
+你可以在上下文上设置异常处理程序，用以捕获在上下文上运行的任务引发的任何未检查的异常。
 
-When no exception handler is set, the `Vertx` exception handler is called instead
+如果未设置异常处理程序，则默认改为调用`Vertx`异常处理器。
 
 [source,java]
 ----
 context.exceptionHandler(throwable -> {
-  // Any exception thrown by this context
+ // 任何通过上下文抛出的异常
 });
 
 vertx.exceptionHandler(throwable -> {
-  // Any exception uncaught exception thrown on context
+ // 任何上下文抛出的未捕获异常
 });
 ----
 
-When no handler is set whatsoever, the exception is logged as an error with the message _Unhandled exception_
+如果未设置任何处理程序，则异常将作为错误记录，并显示消息 _Unhanded exception_
 
-You can report an exception on a context with `reportException`
+你可以使用`reportException`报告上下文中的异常
 
 [source,java]
 ----
 context.reportException(new Exception());
 ----
 
-=== Firing events
+=== 发射事件
 
-`runOnContext` is the most common way to execute a piece of code on a context. Although it is very suited for integrating
-external libraries with Vert.x, it is not always the best fit to integrate code executing at the event-loop level (such as Netty events)
-with application code.
+`runOnContext` 是在上下文上执行一段代码的最常见方式，尽管它非常适合将外部库与Vert.x集成，但它并不总是最适合将在事件循环级别执行的代码（如Netty事件）与应用程序代码集成。
 
-There are internal methods that achieve similar behaviors depending on the situation
+Vert.x有一些内部方法可以根据情况实现类似的行为 :
 
 - `ContextInternal#dispatch(E, Handler<E>)`
 - `ContextInternal#execute(E, Handler<E>)`
@@ -218,7 +177,7 @@ There are internal methods that achieve similar behaviors depending on the situa
 
 ==== Dispatch
 
-`dispatch` assumes the caller thread is the context thread, it associates the current thread of execution with the context:
+`dispatch` 假定调用线程是上下文线程，它将当前执行线程与上下文关联起来：
 
 [source,java]
 ----
@@ -228,9 +187,9 @@ context.dispatch(event, evt -> {
 });
 ----
 
-The handler is also monitored by the blocked thread checker.
+该处理器也被阻塞线程检查器检测。
 
-Finally, any exception thrown by the handler is reported to the context:
+最后，处理程序抛出的任何异常都会报告给上下文：
 
 [source,java]
 ----
@@ -244,14 +203,24 @@ context.dispatch(event, evt -> {
 
 ==== Execute
 
-`execute` executes a task on the context, when the caller thread is already a context thread, the task is executed directly, otherwise
-a task is scheduled for execution.
+`execute` 在上下文上执行任务，当调用线程已经是上下文线程时，直接执行任务，否则安排此任务计划执行（实际是提交给背后的event-loop执行，补充源码如下）。
+[source, java]
+---
+protected <T> void execute(ContextInternal ctx, Runnable task) {
+    EventLoop eventLoop = nettyEventLoop();
+    if (eventLoop.inEventLoop()) {// 如果是上下文线程，直接执行
+      task.run();
+    } else {
+      eventLoop.execute(task);// 否则提交到eventloop中执行
+    }
+  }
+---
 
-NOTE: no context associated is done
+NOTE: 没有上下文关联也可以。
 
 ==== Emit
 
-`emit` is a combination of `execute` and `dispatch`
+`emit` 是 `execute` 和 `dispatch的` 组合
 
 [source,java]
 ----
@@ -260,20 +229,18 @@ default void emit(E event, Handler<E> eventHandler) {
 }
 ----
 
-`emit` can be used from any thread to fire an event to a handler:
+`emit` 可以用于从任何线程上发射事件到处理器上:
 
-- from any thread, it behaves like `runOnContext`
-- from a context thread, it runs the event handler with the context thread local association, the block thread checker and reports failures on the context
+- 在任何线程中，它的行为都类似于`runOnContext`
+- 如果是上下文线程，它通过上下文中的本地线程关联关系、阻塞线程检查器运行事件处理器，并报告上下文上的失败
 
-In most situations, the `emit` method is the way to go to have an application process an event. The main purpose of `dispatch`
-and `execute` methods is to give more control to the code to achieve very specific things.
+在大多数情况下，`emit`方法是让应用程序处理事件的方法,`dispatch`和`execute`方法的主要目的是赋予代码更多的控制权，以实现非常具体的事情。
 
-=== Context aware futures
+=== 上下文感知的futures
 
-Until Vert.x 4, `Future` were statically created object with no specific relationship to a context. Vert.x 4 provides a future
-based API which need to respect the same semantics as Vert.x 3: any callback on a future should predictably run on the same context.
+在 Vert.x 4 之前，`Future` 都是静态创建的对象，与上下文没有特定关系。 Vert.x 4 提供了一个基于 future 的 API，它遵循了与 Vert.x 3 相同的语义：future 上的任何回调都应该可预测地在相同的上下文上运行。
 
-Vert.x 4 API creates futures bound to the caller context that run callbacks on the context:
+Vert.x 4 的API 创建绑定到调用者上下文的 future，在上下文上运行回调：
 
 [source,java]
 ----
@@ -284,7 +251,7 @@ Future<String> future = promise.future();
 future.onSuccess(handler);
 ----
 
-Any callback is emitted on the context that created the promise, the code above is pretty much like:
+任何回调都会在创建 Promise 的上下文中发出，上面的代码大概率会长这样：
 
 [source,java]
 ----
@@ -295,7 +262,7 @@ Future<String> future = promise.future();
 future.onSuccess(result -> context.emit(result, handler));
 ----
 
-In addition, the API allows to create succeeded and failed futures:
+此外，该 API 允许创建成功和失败的 future：
 
 [source,java]
 ----
@@ -303,19 +270,16 @@ Future<String> succeeded = context.succeededFuture("OK usa");
 Future<String> failed = context.failedFuture("Oh sorry");
 ----
 
-=== Contexts and tracing
+=== 上下文和追踪（Contexts and tracing）
 
-Since Vert.x 4, Vert.x integrates with popular distributing tracing systems.
+从 Vert.x 4 开始，Vert.x 集成了流行的分布式跟踪系统。
 
-Tracing libraries usually rely on https://en.wikipedia.org/wiki/Thread-local_storage[thread local storage] to
-propagate tracing data, e.g a trace received when processing an HTTP request should be propagated throughout the
-HTTP client.
+追踪库通常依赖于 https://en.wikipedia.org/wiki/Thread-local_storage[thread local] 来传播跟踪数据，例如，处理 HTTP 请求时收到的跟踪信息应该在整个 HTTP 客户端中传播。
 
-Vert.x integrates tracing in a similar fashion but relies on contexts instead of thread local. Contexts are indeed
-propagated by Vert.x APIs and therefore offers a reliable storage for implementing tracing.
+Vert.x 以类似的方式集成追踪，但依赖于上下文而不是thread local,上下文由 Vert.x API 传播，因此为实现追踪提供了可靠的存储。
 
-Since all HTTP requests processed by a given server use the same context that created the HTTP server, the server context
-is _duplicated_ for each HTTP request, to grant unicity to each HTTP request.
+由于给定服务器处理的所有HTTP请求都使用创建HTTP服务器的相同上下文，因此服务器上下文
+对于每个HTTP请求，是 _duplicated_ _（重复的）_，以授予每个HTTP请求的唯一性。
 
 [source,java]
 ----
@@ -330,7 +294,7 @@ public class MyVerticle extends AbstractVerticle {
 }
 ----
 
-Duplication shares most of the characteristics of the original context and provides a specific local storage.
+这种重复（复制）操作共享原始上下文的大部分特性并提供特定的本地存储。
 
 [source,java]
 ----
@@ -344,7 +308,7 @@ vertx.createHttpServer()
   .listen(8080, "localhost");
 ----
 
-Later the application can use it:
+然后应用就可以使用它了:
 
 [source,java]
 ----
@@ -352,8 +316,7 @@ Context context = vertx.getOrCreateContext();
 JsonObject specificRequestData = context.getLocal("my-stuff");
 ----
 
-`ContextInternal#duplicate()` duplicates the current context, it can be used to scope an activity associated with
-a trace
+`ContextInternal#duplicate()` 复制当前上下文，它可用于确定追踪行动的范围
 
 [source,java]
 ----
@@ -363,14 +326,11 @@ public void startProcessing(Request request) {
 }
 ----
 
-=== Close hooks
+=== 关闭钩子函数（Close hooks）
 
-Close hooks is an internal feature of Vert.x useful for creating components that are notified when a `Verticle`
-or a `Vertx` instance is closed. It can be used for implementing _automatic clean-up in verticles_
-feature, like for a Vert.x HTTP server.
+Close hooks 是 Vert.x 的一项内部功能，在 Verticle 或 Vertx 实例关闭时可通知到组件， 它可用于实现 verticle 中的自动清理功能，例如 Vert.x HTTP 服务器。
 
-The contract for receving a close notification is defined by the `io.vertx.core.Closeable` interface and
-its `close(Promise<Void> closePromise)` method:
+`io.vertx.core.Closeable` 接口及其 `close(Promise<Void> closePromise)` 方法定义了接收关闭通知的实现：
 
 [source,java]
 ----
@@ -381,27 +341,24 @@ public void close(Promise<Void> completion) {
 }
 ----
 
-The method `ContextInternal#addCloseHook` registers a `Closeable` instance to be notified when the context closes:
+`ContextInternal#addCloseHook` 注册了一个 `Closeable` 的实例用于通知上下文什么时候关闭：
 
 [source,java]
 ----
 context.addCloseHook(closeable);
 ----
 
-A context created by a Verticle deployment calls the hook when the verticle instance is stopped.
+当 Verticle 实例停止时，Verticle 部署创建的上下文会调用该钩子。否则，当 Vertx 实例关闭时会调用该钩子。
 
-Otherwise, the hook is called when the Vertx instance is closed.
-
-`Context#removeCloseHook` unregisters the close hook and shall be used when the resource is closed before the close hook is called.
+`Context#removeCloseHook` 取消注册关闭钩子，并会在调用关闭钩子函数之前资源即将关闭时使用。
 
 [source,java]
 ----
 context.removeCloseHook(closeable);
 ----
 
-Hooks are implemented with weak references to avoid leaks, nevertheless unregistering hooks should be done.
+钩子函数为避免泄漏是用弱引用实现的，但是不论如何你也应该取消注册钩子。
 
-Adding a hook on a duplicate context, adds the hook to the original context.
+在重复上下文上添加钩子，会将钩子添加到原始上下文。
 
-Likewise `VertxInternal` expose also the same operations to receive notifications when a `Vertx` instance is closed.
-
+同样，`VertxInternal` 也暴露了相同的方法来在 Vertx 实例关闭时接收通知。
