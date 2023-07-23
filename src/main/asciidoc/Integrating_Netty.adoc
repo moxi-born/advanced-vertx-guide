@@ -1,239 +1,401 @@
-== Integrating Netty
+== 集成Netty
 
-Netty is one of the dependencies of Vert.x. In fact, Netty powers the networking services of Vert.x. Vert.x Core
-provides the basic network services one can expect from such library:
+Netty是Vert.x的依赖之一。事实上，Netty给予了Vert.x网络服务的能力，你可以使用Vert.x Core编写以下类型的基本网络服务：
 
 - TCP
 - HTTP
 - UDP
 - DNS
 
-These are built with various components from Netty. The Netty community has implemented a wide
-range of components and this chapter explains how to integrate such components in Vert.x.
+它们是基于 Netty 的各种组件构建的。 Netty 社区已经实现了广泛的组件，本章解释了如何在 Vert.x 中集成这些组件。
 
-In this chapter we will build a https://tools.ietf.org/html/rfc868[TIME] prococol client and server. The Netty
-documentation provides client/server implementations of this simple protocol, we will focus on the integration
-of these components.
+在本章中，我们将构建一个 https://tools.ietf.org/html/rfc868[TIME] 协议客户端和服务器。 Netty 文档提供了这个简单协议的客户端/服务器实现，我们将重点关注这些组件的集成。
 
-=== Netty integration points
+=== Netty集成点
 
-The main purpose of this chapter is to explain some of the Vert.x's internal interfaces. Such interfaces are
-extensions that exposes low level methods to interact with Netty that are useful for components that
-re-use Netty directly.
+本章的主要目的是解释 Vert.x 的一些内部接口，此类接口是暴露与 Netty 交互的底层方法的扩展，这些方法对于直接重用 Netty 的组件非常有用。
 
-NOTE: Most users don't need to deal with this extension and thus such methods are isolated in an extension interface.
+NOTE: 大多数用户不需要处理这些扩展，因此这些方法被隔离在扩展接口中。
 
-==== Bootstrapping clients
 
-`ContextInternal` extends `io.vertx.core.Context` and exposes various Netty integration points like `VertxInternal`.
+==== 启动客户端
 
-Usually contexts are obtained from the `Vertx#getOrCreateContext()` method that returns the current execution context
-or create a new one if necessary: when called in a Verticle, `getOrCreateContext()` returns the context of this Verticle, when used in a non Vert.x
-thread like a `main` or a unit test, it creates a new one and returns it.
+`ContextInternal` 继承了 `io.vertx.core.Context` 并暴露了一些 Netty 集成点，比如 `VertxInternal`。
+
+通常情况下，上下文是从 `Vertx#getOrCreateContext()` 方法获取的，该方法返回当前执行上下文，或者在必要时创建一个新的上下文：在 Verticle 中调用时，`getOrCreateContext()` 返回此 Verticle 的上下文，当在主线程或单元测试等非 Vert.x 线程中使用时，它会创建一个新上下文并返回它。
 
 [source,java]
 ----
-{@link org.vietj.vertx.internals.Internals#exampleGetOrCreateContext}
+Context context = vertx.getOrCreateContext();
+
+// 强转借此访问额外的方法
+Internals contextInternal = (Internals) context;
 ----
 
-Contexts are always associated with a Netty event loop and thus using this context ensures our components
-re-use the same event loop if one existed before or use a new one.
+上下文始终与 Netty 事件循环（event loop）相关联，因此使用此上下文可确保我们的组件重复使用相同的事件循环（如果之前存在）或使用新的事件循环。
 
-The `ContextInternal#nettyEventLoop()` method returns this particular event loop and we can use it on
-`Bootstrap` (for client) or `ServerBoostrap` (for server):
+`ContextInternal#nettyEventLoop()` 方法返回这个特定的事件循环，我们可以在 Bootstrap（对于客户端）或 ServerBoostrap（对于服务器）上使用它：
 
 [source,java]
 ----
-{@link org.vietj.vertx.internals.Internals#exampleBoostrap}
+ContextInternal contextInt = (ContextInternal) context; // 1
+EventLoop eventLoop = contextInt.nettyEventLoop();
+
+Bootstrap bootstrap = new Bootstrap(); // 2
+bootstrap.channel(NioSocketChannel.class);
+bootstrap.group(eventLoop);
 ----
-<1> get the event-loop associated with this context
-<2> create a bootstrap for the client
+<1> 获取这个上下文关联的event loop
+<2> 创建客户端的Bootstrap
 
-==== Bootstrapping servers
+==== 启动服务端
 
-`VertxInternal` extends `io.vertx.core.Vertx`, among all `VertxInternal#getAcceptorEventLoopGroup()`
-returns an `EventLoopGroup` for accepting connections on a server, it's typical usage is on a `ServerBootstrap`:
+`VertxInternal` 扩展了 `io.vertx.core.Vertx`，其中 `VertxInternal#getAcceptorEventLoopGroup()` 返回一个 EventLoopGroup用于接受服务器上的连接，它的常见用法是在 ServerBootstrap 上：
 
 [source,java]
 ----
-{@link org.vietj.vertx.internals.Internals#exampleServerBootstrap}
+ContextInternal contextInt = (ContextInternal) context; // 1
+EventLoop eventLoop = contextInt.nettyEventLoop();
+
+VertxInternal vertxInt = contextInt.owner(); // 2
+EventLoopGroup acceptorGroup = vertxInt.getAcceptorEventLoopGroup();
+
+ServerBootstrap bootstrap = new ServerBootstrap(); // 3
+bootstrap.channel(NioServerSocketChannel.class);
+bootstrap.group(acceptorGroup, eventLoop);
+
 ----
-<1> get the event-loop associated with this context
-<2> get the acceptor event-loop group of Vertx
-<2> create the boostrap for the server
+<1> 获取这个上下文关联的event loop
+<2> 获取这个Vertx的Acceptor event loop组
+<2> 创建服务端的Bootstrap
 
-==== Handling events
+==== 处理事件
 
-Now that we are more intimate with `ContextInternal`, let's look at how we can use it to handle Netty events such
-as network events, channel life cycle, etc...
+现在我们对 `ContextInternal` 更熟悉了，让我们看看如何使用它来处理Netty事件，如网络事件、channel生命周期等…
 
-The `ContextInternal#emit` methods is used to emit events to the application as it ensures:
+`ContextInternal#emit` 方法用于向应用程序发出事件，它确保了：
 
-- the context concurrency: reuse the current event-loop thread or execute on a worker
-- the thread local association of the current context with the dispatch thread
-- any uncaught exception thrown is reported on the context, such exception is either logged or passed to the `Context#exceptionHandler`
+- 上下文并发性：重复利用当前的event-loop线程或者在worker线程执行
+- 当前上下文与调度线程的thread local关联
+- 任何抛出的未捕获异常都会在上下文中报告，这样的异常要么被记录，要么被传递给 `context#exceptionHandler`
 
-Here is a short example showing a server bootstrap
+如下展示了一个简短的服务启动代码：
 
 [source,java]
 ----
-{@link org.vietj.vertx.internals.Internals#executeFromIO}
+Handler<Channel> bindHandler = ch -> {
+};
+
+bootstrap.childHandler(new ChannelInitializer<Channel>() {
+  @Override
+  protected void initChannel(Channel ch) {
+    context.emit(ch, bindHandler);
+  }
+});
+
+Promise<Void> bindPromise = context.promise();
+
+bootstrap.bind(socketAddress).addListener(new ChannelFutureListener() {
+  @Override
+  public void operationComplete(ChannelFuture future) throws Exception {
+    if (future.isSuccess()) {
+      // 通知应用绑定成功
+      bindPromise.complete();
+    } else {
+      // 通知应用绑定失败
+      bindPromise.fail(future.cause());
+    }
+  }
+});
+
+return bindPromise.future();
 ----
 
-The typical usage of `emit` is to dispatch one or multiple events to the same handler, like an event handler.
+`emit` 的典型用法是将一个或多个事件下发到同一个处理程序，就像事件处理程序一样。
+当涉及到future时，`ContextInternal#promise` 方法会创建一个promise，这个promise会像emit一样对监听器执行操作。
 
-When it comes to a future, the `ContextInternal#promise` method creates a promise that will behave with listeners like
-the `emit` method.
+=== 服务端
 
-=== The server
+你可以在 https://netty.io/wiki/user-guide-for-4.x.html#wiki-h3-9[这里]找到原始的服务器代码实例。
 
-The original server example can be found https://netty.io/wiki/user-guide-for-4.x.html#wiki-h3-9[here].
+本文示例的Vert.x TIME服务代码暴露了一个简单的接口，包含如下：
 
-The Vert.x TIME server exposes a simple API:
-
-- a static method to create a `TimeServer`
-- two methods: `listen` to bind a server and `close` to unbind
-- the `requestHandler` for setting a handler for handling requests
+- 一个创建TimeServer的静态方法
+- 两个方法：通过listen 绑定服务，通过 close 解绑服务
+- `requestHandler` - 用于设置处理请求的处理器handler
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyserver.TimeServer}
+public interface TimeServer {
+
+  /**
+   * @return 返回一个时间服务
+   */
+  static TimeServer create(Vertx vertx) {
+    return new TimeServerImpl(vertx);
+  }
+
+  /**
+   * 设置发生时间请求时要调用的handler. 这个handler应该完成包含时间的future
+   *
+   * @param handler the handler to be called
+   * @return this object
+   */
+  TimeServer requestHandler(Handler<Promise<Long>> handler);
+
+  /**
+   * 启动并绑定时间server.
+   *
+   * @param port the server port
+   * @param host the server host
+   * @return the future completed when the socket is bound
+   */
+  Future<Void> listen(int port, String host);
+
+  /**
+   * 关闭时间server.
+   */
+  void close();
+
+}
 ----
 
-A TIME server serving the current JVM time is then straighforward to implement:
+接下来实现一个返回当前JVM时间的TIME服务：
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyserver.TimeServerExample#main}
+Vertx vertx = Vertx.vertx();
+
+// 创建时间server
+TimeServer server = TimeServer.create(vertx);
+server.requestHandler(time -> {
+  time.complete(System.currentTimeMillis());
+});
+
+// 启动
+server.listen(8037, "0.0.0.0")
+    .onSuccess(v -> System.out.println("Server started"))
+    .onFailure(err -> err.printStackTrace());
 ----
 
-Let's study now the server implementation.
+现在让我们研究一下服务器的实现。
 
-=== The server bootstrap
+=== 服务端的bootstrap
 
-First let's have a look at the `ServerBootstrap` creation and configuration
+首先让我们看一下ServerBootstrap的创建和配置
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyserver.impl.TimeServerImpl#createBootstrap}
+EventLoopGroup acceptorGroup = vertx.getAcceptorEventLoopGroup(); // 1
+EventLoop eventLoop = context.nettyEventLoop(); // 2
+bootstrap = new ServerBootstrap(); // 3
+bootstrap.channel(NioServerSocketChannel.class);
+bootstrap.group(acceptorGroup, eventLoop);
+bootstrap.childHandler(new ChannelInitializer<Channel>() {
+  @Override
+  protected void initChannel(Channel ch) throws Exception {
+    ChannelPipeline pipeline = ch.pipeline(); // 4
+    TimeServerHandler handler = new TimeServerHandler(context, requestHandler);
+    pipeline.addLast(handler);
+  }
+});
 ----
-<1> `VertxInternal` returns the event loop group to use as acceptor group
-<2> `ContextInternal` returns the event loop to use as child group
-<3> create and configure the Netty's `ServerBootstrap`
-<4> configure the channel with the `TimeServerHandler` initialized with the server `requestHandler`
+<1> `VertxInternal` 返回event loop组当作Acceptor组（Boss接受请求）
+<2> `ContextInternal` 返回 event loop组用child组（worker处理请求）
+<3> 创建并配置Netty的 `ServerBootstrap`
+<4> 使用 `requestHandler` 初始化 `TimeServerHandler` 并通过`TimeServerHandler` 配置channel
 
-The creation of the `ServerBootstrap` is quite straightforward and is very similar to the original version.
-The main difference is that we reuse the event-loop provided by the Verticle and Vert.x. This ensures that
-our server shares the same resources of our application.
+ServerBootstrap的创建非常简单，与直接使用Netty的版本非常相似，主要的区别在于，我们复用了Verticle和Vert.x提供的事件循环event loop，这确保了我们的服务器共享应用程序的资源（这里指event loop）。
 
-Notice that the `TimeServerHandler` is initialized with the server `requestHandler`, this handler will be
-used when serving TIME requests.
+这里要注意，`TimeServerHandler` 是用服务器的 `requestHandler` 初始化的，这个handler将在提供TIME请求时使用。
 
-=== The server bind
+=== 服务绑定
 
-Now let's have a look at the bind operation, again it's very and does not differ much from the original
-example:
+现在让我们来看一下绑定操作，它与直接使用Netty的原始版本示例有很多不同但区别也不是特别大：
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyserver.impl.TimeServerImpl#bind}
+Promise<Void> promise = context.promise(); // 1
+
+ChannelFuture bindFuture = bootstrap.bind(host, port);
+bindFuture.addListener(new ChannelFutureListener() {
+  @Override
+  public void operationComplete(ChannelFuture future) {
+    // 2
+    if (future.isSuccess()) {
+      channel = future.channel();
+      promise.complete();
+    } else {
+      promise.fail(future.cause());
+    }
+  }
+});
+
+return promise.future(); // 3
 ----
-<1> create a promise bound to the server context
-<2> complete or succeed the result promise
-<3> return the future result
+<1> 创建一个绑定这个Server上下文的promise
+<2> 将结果promise设置为完成或者成功（代码中应为完成或者失败）
+<3> 返回future结果
 
-The most important part is the creation of the context promise to make the application aware of the bind result.
+此处最重要的部分是创建上下文promise，用于让应用程序知道绑定结果。
 
-=== The server handler
+=== 服务handler
 
-Now let's finish our server with the `TimeServerHandler`, which is an adaptation of the Netty's
-original https://netty.io/wiki/user-guide-for-4.x.html#wiki-h3-8[`TimeServerHandler`]:
+现在，让我们用 `TimeServerHandler` 来完成我们的服务器，它改写自Netty原始版本 https://netty.io/wiki/user-guide-for-4.x.html#wiki-h3-8[`TimeServerHandler`]:
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyserver.impl.TimeServerHandler#channelActive}
+Promise<Long> result = Promise.promise(); // 1
+
+context.emit(result, requestHandler); // 2
+
+result.future().onComplete(ar -> { //3
+  if (ar.succeeded()) {  // 4
+    ByteBuf time = ctx.alloc().buffer(4);
+    time.writeInt((int) (ar.result() / 1000L + 2208988800L));
+    ChannelFuture f = ctx.writeAndFlush(time);
+    f.addListener((ChannelFutureListener) channelFuture -> ctx.close());
+  } else {  // 5
+    ctx.close();
+  }
+});
 ----
-<1> create a new blank promise that will be resolved by the `requestHandler`
-<2> let the context emit the event to the `requestHandler` with `emit`
-<3> the future handler is called when the `requestHandler` implementation completes the associated promise
-<4> write the current TIME to the channel and close it after
-<5> the application failed we simply close the socket
+<1> 创建一个将由 `requestHandler` 解析的空promise
+<2> 让上下文使用 `emit` 将事件发送给 `requestHandler`
+<3> 当 `requestHandler` 的实现完成相关的promise时，调用future的处理程序
+<4> 将当前时间写入channel，然后关闭
+<5> 如果应用程序失败，只需关闭socket套接字
 
-`emit` is used when a TIME request event happens, the promise to be completed is
-passed to the `requestHandler`. When this promise is completed, the handler will either write the
-time result to the channel or close it.
+`emit` 是 TIME请求事件发生时使用的, 将需要完成（complete）的promise传递给 `requestHandler`. 当promise完成了（completed）, handler将时间结果写入到通道或将其关闭。
 
-=== The client
+=== 客户端
 
-The original client example can be found https://netty.io/wiki/user-guide-for-4.x.html#wiki-h3-10[here].
+你可以在 https://netty.io/wiki/user-guide-for-4.x.html#wiki-h3-10[这里]找到原始的客户端代码实例。
 
-The Vert.x time client exposes a simple API:
+本文示例的Vert.x TIME客户端暴露了一个简单的接口，包含：
 
-- a static method for creating a `TimeClient`
-- the client `getTime` method for retrieving a time value from a server
+- 一个创建TimeClient的静态方法
+- 客户端从服务端获取时间的getTime方法
+
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyclient.TimeClient}
+public interface TimeClient {
+
+  /**
+   * @return 返回一个time客户端
+   */
+  static TimeClient create(Vertx vertx) {
+    return new TimeClientImpl(vertx);
+  }
+
+  /**
+   * 从服务器获取当前时间
+   *
+   * @param port the server port
+   * @param host the server host name
+   * @return the result future
+   */
+  Future<Long> getTime(int port, String host);
+
+}
 ----
 
-The TIME client is straightforward to use:
+TIME客户端使用起来很简单：
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyclient.TimeClientExample#main}
+Vertx vertx = Vertx.vertx();
+
+// 创建time client
+TimeClient server = TimeClient.create(vertx);
+
+// 获取时间
+server.getTime(8037, "localhost").onComplete(ar -> {
+  if (ar.succeeded()) {
+    System.out.println("Time is " + new Date(ar.result()));
+  } else {
+    ar.cause().printStackTrace();
+  }
+});
 ----
 
-Let's study now the client implementation.
+现在让我们研究下客户端的实现。
 
-=== The client bootstrap
+=== 客户端的bootstrap
 
-First let's have a look at the `Bootstrap` creation and configuration
+首先让我们看下客户端Bootstrap的创建和配置
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyclient.impl.TimeClientImpl#createBootstrap}
+EventLoop eventLoop = context.nettyEventLoop();  // 1
+
+// 创建并配置 Netty bootstrap
+Bootstrap bootstrap = new Bootstrap(); // 2
+bootstrap.group(eventLoop);
+bootstrap.channel(NioSocketChannel.class);
+bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
+bootstrap.handler(new ChannelInitializer<Channel>() {
+  @Override
+  protected void initChannel(Channel ch) {
+    ChannelPipeline pipeline = ch.pipeline(); // 3
+    pipeline.addLast(new TimeClientHandler(result));
+  }
+});
+
+return bootstrap;
 ----
-<1> `ContextInternal` returns the event loop to use as child group
-<2> create and configure the Netty's `Bootstrap`
-<3> configure the channel with the `TimeServerHandler` initialized with the server `resultHandler`
+<1> `ContextInternal` 返回event loop用作child组（用于接受请求）
+<2> 创建并配置 Netty `bootstrap`
+<3> 通过返回结果处理器 `resultHandler`（这里是个promise）初始化 `TimeClientHandler`，然后配置channel
 
-The creation of the `Bootstrap` is quite straightforward and is very similar to the original version.
-The main difference is that we reuse the event-loop provided by the Verticle. This ensures that our client
-reuses the same event-loop than our verticle.
+`Bootstrap` 的创建非常简单，与Netty原始版本非常相似，主要区别在于我们使用了Verticle提供的event loop事件循环，这确保了我们的客户复用与Verticel相同的event loop。
 
-Like in the server example we use the `ContextInternal` to obtain Netty's `EventLoop` to set on the `Bootstrap`.
+就像在服务器部分的示例中一样，我们使用 `ContextInternal`来获取要在Bootstrap上设置的Netty EventLoop。
 
-Notice that the `TimeServerHandler` is initialized with the client `resultHandler`, this handler will be
-called with the TIME request result.
+需要注意的是，`TimeClientHandler` 是用客户端 `resultHandler` 初始化的，这个处理程序将用于TIME请求结果调用。
 
-=== The client connect
+=== 客户端连接
 
-The bootstrap setup is very similar to the original example, in case of a failure the application callback
-uses a promise that holds the overall result.
+BootStrap程序的设置与原始的示例非常相似，在失败的情况下，应用程序将使用一个包含整体结果的promise作为回调。
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyclient.impl.TimeClientImpl#connect}
+ChannelFuture connectFuture = bootstrap.connect(host, port); // 1
+connectFuture.addListener(new ChannelFutureListener() {
+  @Override
+  public void operationComplete(ChannelFuture future) throws Exception {
+    if (!future.isSuccess()) {
+      result.fail(future.cause()); // 2
+    }
+  }
+});
 ----
-<1> connect to the server
-<2> upon connect error we fail the promise
+<1> 连接到服务器
+<2> 一旦连接失败，将promise置为失败
 
-We only care of propagating a connect failure to the application, when the bootstrap connects
-successfully, the `TimeServerHandler` will handle the network response to the application.
+在此处我们只关心将连接失败传播到应用程序，当引导程序成功连接时，`TimeServerHandler` 将处理对应用程序的网络响应。
 
-=== The client handler
+=== 客户端handler
 
-Now let's complete our client with the `TimeServerHandler`, which is an adaptation of the Netty's
-original https://netty.io/wiki/user-guide-for-4.x.html#wiki-h3-9[`TimeClientHandler`]:
+现在，让我们用`TimeClientHandler`来完成我们的客户端，它是对Netty原始版本 https://netty.io/wiki/user-guide-for-4.x.html#wiki-h3-9[`TimeClientHandler`]的改写:
 
 [source,java]
 ----
-{@link org.vietj.vertx.nettyclient.impl.TimeClientHandler#channelRead}
+ByteBuf m = (ByteBuf) msg;
+long currentTimeMillis;
+try {
+  currentTimeMillis = (m.readUnsignedInt() - 2208988800L) * 1000L; // 1
+  resultPromise.complete(currentTimeMillis);  // 2
+  resultPromise = null; // 3
+  ctx.close(); // 4
+} finally {
+  m.release();
+}
 ----
-<1> decode the time response from the server
-<2> complete the `resultPromise` with the response
-<3> set the `resultPromise` to `null`
-<4> close the channel
+<1> 解析从服务器返回的时间
+<2> 使用response将 `resultPromise` 置为完成
+<3> 将 `resultPromise` 设置为 `null`
+<4> 关闭channel
 
-Again here, we complete the `resultPromise` when a TIME response event happens.
+这里重复说明下，当TIME响应事件发生时，我们将 `resultPromise` 设置为完成。
