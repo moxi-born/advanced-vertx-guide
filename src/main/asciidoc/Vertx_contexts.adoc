@@ -205,7 +205,7 @@ context.dispatch(event, evt -> {
 
 `execute` 在上下文上执行任务，当调用线程已经是上下文线程时，直接执行任务，否则安排此任务计划执行（实际是提交给背后的event-loop执行，补充源码如下）。
 [source, java]
----
+----
 protected <T> void execute(ContextInternal ctx, Runnable task) {
     EventLoop eventLoop = nettyEventLoop();
     if (eventLoop.inEventLoop()) {// 如果是上下文线程，直接执行
@@ -214,7 +214,7 @@ protected <T> void execute(ContextInternal ctx, Runnable task) {
       eventLoop.execute(task);// 否则提交到eventloop中执行
     }
   }
----
+----
 
 NOTE: 没有上下文关联也可以。
 
