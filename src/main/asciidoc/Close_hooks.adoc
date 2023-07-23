@@ -1,11 +1,8 @@
-== Close hooks
+== 关闭钩子函数（Close hooks）
 
-Close hooks is an internal feature of Vert.x useful for creating components that are notified when a `Verticle`
- or a `Vertx` instance is closed. It can be used for implementing _automatic clean-up in verticles_
- feature, like for a Vert.x HTTP server.
+Close hooks 是 Vert.x 的一项内部功能，在 Verticle 或 Vertx 实例关闭时可通知到组件， 它可用于实现 verticle 中的 _自动清理功能_，例如 Vert.x HTTP 服务器。
 
-The contract for receving a close notification is defined by the `io.vertx.core.Closeable` interface and
-its `close(Promise<Void> closePromise)` method:
+`io.vertx.core.Closeable` 接口及其 `close(Promise<Void> closePromise)` 方法定义了接收关闭通知的实现
 
 [source,java]
 ----
@@ -16,25 +13,25 @@ public void close(Promise<Void> completion) {
 }
 ----
 
-A `Closeable` instance can be registered to receive a close hook with the method
-
-The method `ContextInternal#addCloseHook` registers a `Closeable` instance to be notified when the context closes:
+`ContextInternal#addCloseHook` 注册了一个Closeable的实例用于通知上下文什么时候关闭：
 
 [source,java]
 ----
 context.addCloseHook(closeable);
 ----
 
-Context created by a Verticle deployment signals calls the hook when the verticle instance is destroyed.
+当 Verticle 实例停止时，Verticle 部署创建的上下文会调用该钩子。否则，当 Vertx 实例关闭时会调用该钩子。
 
-Otherwise the call hook is called when the Vertx instance is closed.
+`Context#removeCloseHook` 取消注册关闭钩子，并会在调用关闭钩子函数之前资源即将关闭时使用。
 
-The method `Context#removeCloseHook` unregisters the close hook and shall be used when the resource is closed before
-the close hook is called.
 
 [source,java]
 ----
 context.removeCloseHook(closeable);
 ----
 
-Likewise `VertxInternal` provides the same operation to receive notifications when a `Vertx` instance is closed.
+钩子函数为避免泄漏是用弱引用实现的，但是不论如何你也应该取消注册钩子。
+
+在重复上下文上添加钩子，会将钩子添加到原始上下文。
+
+同样，VertxInternal 也暴露了相同的方法来在 Vertx 实例关闭时接收通知。
